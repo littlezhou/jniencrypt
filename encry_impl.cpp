@@ -1,7 +1,7 @@
 #include <jni.h>
 #include <jni_md.h>
-#include </home/Kerby/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
-
+#include </home/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
+//#include </home/Kerby/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

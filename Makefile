@@ -1,8 +1,8 @@
 
-allbin=aes128 aes_cts_128
+allbin=aes128 aes_cts_128 dlload_encry
 
 all: $(allbin)
-	g++ -shared -fPIC -g -O0 -o libencypxx.so encry_impl.cpp -I/usr/lib/jvm/java-1.7.0-openjdk.x86_64/include -I/usr/lib/jvm/java-1.7.0-openjdk.x86_64/include/linux  -lssl
+	g++ -shared -fPIC -g -O0 -o libencypxx.so encry_impl.cpp -I/usr/lib/jvm/java-1.8.0/include -I/usr/lib/jvm/java-1.8.0/include/linux  -lssl
 
 %: %.c
 	gcc $< -std=c99 -g -lssl -o $@
