@@ -8,6 +8,7 @@
 #include <openssl/evp.h>
 #include <openssl/aes.h>
 #include <openssl/modes.h>
+#include <dlfcn.h>
 
 #define BLOCK_SIZE 16
 
@@ -101,6 +102,99 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 }
 
 
+typedef size_t (*FUN_CTS128_CRYPT)(const unsigned char *in, unsigned char *out,  
+                             size_t len, const void *key,  
+                             unsigned char ivec[16], cbc128_f cbc);  
+
+typedef void (*FUN_AES_CBC)(const unsigned char *in, unsigned char *out,  
+       size_t len, const AES_KEY *key,  
+       unsigned char *ivec, const int enc);
+
+typedef int (*FUN_SET_KEY)(const unsigned char *userKey, const int bits,  AES_KEY *key);
+
+
+int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
+{
+	static FUN_CTS128_CRYPT cts_encrypt = NULL;
+	static FUN_CTS128_CRYPT cts_decrypt = NULL;
+	static FUN_AES_CBC	aes_cbc	    = NULL;
+	static FUN_SET_KEY	set_en_key  = NULL;
+	static FUN_SET_KEY	set_de_key  = NULL;
+
+    char *err;
+    void *so_handle;
+    char soname[] = "/usr/lib64/libcrypto.so";
+
+	int nblocks = 0;
+	int ret = 0;
+	AES_KEY aes_key;
+	FUN_CTS128_CRYPT do_proc;
+	FUN_SET_KEY	 set_key;
+
+    if(cts_encrypt == NULL )
+{
+    so_handle = dlopen(soname, RTLD_LAZY);
+    if (!so_handle) {  
+        fprintf(stderr, "Error: load so `%s' failed./n", soname);  
+        exit(-1);  
+    }  
+  
+    dlerror(); 
+
+    cts_decrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_decrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s/n", err);  
+        exit(-1);  
+    }
+
+    cts_encrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_encrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s/n", err);  
+        exit(-1);  
+    }
+
+    aes_cbc = (FUN_AES_CBC)dlsym(so_handle, "AES_cbc_encrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s/n", err);  
+        exit(-1);  
+    }
+
+    set_en_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_encrypt_key"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s/n", err);  
+        exit(-1);  
+    }
+
+    set_de_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_decrypt_key"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s/n", err);  
+        exit(-1);  
+    }
+
+    dlclose(so_handle);
+}
+
+	nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
+	if (nblocks == 1) {
+
+	} else if (nblocks > 1) {
+		do_proc = encrypt ? cts_encrypt : cts_decrypt;
+		set_key = encrypt ? set_en_key : set_de_key;
+		if (set_key(key, 128, &aes_key)<0){
+			printf("key error");
+			exit(-1);
+		}
+		ret = do_proc(data, out, datalen, &aes_key, iv, (cbc128_f)aes_cbc);
+	}
+	return ret;
+}
+
+
 JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative_doEncryptAes128
   (JNIEnv * env, jobject obj, jbyteArray jdata, jbyteArray jkey, jbyteArray jiv, jboolean jencrypt) 
 {
@@ -129,9 +223,10 @@ int i = 1;
 	memcpy(ndata, data, datalen);
 	memcpy(nkey, key, keylen);
 	memcpy(niv, iv, ivlen);
-while(i);
-	int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
-				cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
+//while(i);
+	//int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
+	//			cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
+	int retlen = dl_encry(encrypt?1:0, nkey, 16, ndata, datalen, niv, buf);
 fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
 fclose(fp);
 	memcpy(data, buf, retlen);
