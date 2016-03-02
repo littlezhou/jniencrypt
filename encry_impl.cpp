@@ -115,17 +115,19 @@ JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_prov
 	jbyte *pjiv = env->GetByteArrayElements(jiv, 0);
 	unsigned char *iv = (unsigned char*)pjiv;
 	int ivlen = env->GetArrayLength(jiv);
-
-printf("%s %d -> %s \n", "data", datalen, bytetohexstring(data, datalen));
-printf("%s %d -> %s \n", "key", 16, bytetohexstring(key, 16));
-    printf("%s %d -> %s \n", "iv ", 16, bytetohexstring(iv , 16));
+FILE *fp = fopen("/tmp/jni_dbg.log", "w");
+fprintf(fp, "%s %d -> %s \n", "data", datalen, bytetohexstring(data, datalen)); fflush(fp);
+fprintf(fp, "%s %d -> %s \n", "key", keylen, bytetohexstring(key, keylen)); fflush(fp);
+fprintf(fp, "%s %d -> %s \n", "iv ", ivlen, bytetohexstring(iv , ivlen)); fflush(fp);
 
 	bool encrypt = jencrypt == JNI_TRUE;
-	
+int i = 1;	
 	unsigned char *buf = (unsigned char *)malloc(datalen);
+while(i);
 	int retlen = encrypt ? cts128_encrypt(key, 16, data, datalen, iv, buf) :
 				cts128_decrypt(key, 16, data, datalen, iv, buf);
-printf("%s %d -> %s \n", "ret", datalen, bytetohexstring(buf, retlen));
+fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
+fclose(fp);
 	memcpy(data, buf, retlen);
 	jbyteArray jret = env->NewByteArray(retlen);
 	env->SetByteArrayRegion(jret, 0, retlen, pjdata);

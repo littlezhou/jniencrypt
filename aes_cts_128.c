@@ -96,9 +96,10 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 	return ret;
 }
 
-void main(){
-    unsigned char * key = extochar("49CB7071A3281DFADFE055438E6A5723",32);
-    unsigned char * iv =  extochar("00000000000000000000000000000000",32);
+void main(int argv, char *args[]){
+
+    unsigned char * key = extochar(args[2],32);
+    unsigned char * iv =  extochar(args[3],32);
     unsigned char msg[256], encoded[256]; //more than needed
     AES_KEY aes_key;
     int msg_len;
@@ -106,8 +107,8 @@ void main(){
     printf("%s %d -> %s \n", "key", 16, bytetohexstring(key, 16));
     printf("%s %d -> %s \n", "iv ", 16, bytetohexstring(iv , 16));
 
-    char *tp = "173C28698191D82E8B97DF654A0D6F6D5468697320697320616E6F7468657220746573742E0A";
-    msg_len = phrase_hex(tp, msg);
+    //char *tp = "173C28698191D82E8B97DF654A0D6F6D5468697320697320616E6F7468657220746573742E0A";
+    msg_len = phrase_hex(args[1], msg);
     printf("%s %d -> %s \n", "msg", msg_len, bytetohexstring(msg, msg_len));
 
     int encodedlen = cts128_encrypt(key, 16, msg, msg_len, iv, encoded);
