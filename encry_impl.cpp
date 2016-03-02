@@ -122,10 +122,16 @@ fprintf(fp, "%s %d -> %s \n", "iv ", ivlen, bytetohexstring(iv , ivlen)); fflush
 
 	bool encrypt = jencrypt == JNI_TRUE;
 int i = 1;	
-	unsigned char *buf = (unsigned char *)malloc(datalen);
+	unsigned char *buf = (unsigned char *)malloc(datalen +64);
+        unsigned char *ndata = (unsigned char *)malloc(datalen);
+        unsigned char *nkey = (unsigned char *)malloc(keylen);
+        unsigned char *niv = (unsigned char *)malloc(ivlen);
+	memcpy(ndata, data, datalen);
+	memcpy(nkey, key, keylen);
+	memcpy(niv, iv, ivlen);
 while(i);
-	int retlen = encrypt ? cts128_encrypt(key, 16, data, datalen, iv, buf) :
-				cts128_decrypt(key, 16, data, datalen, iv, buf);
+	int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
+				cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
 fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
 fclose(fp);
 	memcpy(data, buf, retlen);
