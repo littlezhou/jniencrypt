@@ -5,6 +5,8 @@
 #include <openssl/aes.h>
 #include <openssl/modes.h>
 
+#define BLOCK_SIZE 16
+
 int chartoint(char car) {
 }
 
@@ -29,12 +31,25 @@ unsigned char * extochar(unsigned char * in, int inLen)
 	int len = strlen(in);
 	unsigned char *p = (unsigned char*)malloc(inLen);
 	memset(p, 0, inLen);
-	for( i = 0; i < len/2; i+=2, idx++ )
+	for( i = 0; i < len; i+=2, idx++ )
 	{
 		p[idx] = ((in[i] & 0x40) ? (in[i] & 0xF) + 9 : (in[i] & 0xF)) << 4;
 		p[idx] += (in[i + 1] & 0x40) ? (in[i + 1] & 0xF) + 9 : in[i + 1] & 0xF;
 	}
 	return p;
+}
+
+int phrase_hex(unsigned char * in, unsigned char *out)
+{
+	int idx = 0, i;
+	int len = strlen(in);
+	unsigned char *p = (unsigned char*)out;
+	for( i = 0; i < len; i+=2, idx++ )
+	{
+		p[idx] = ((in[i] & 0x40) ? (in[i] & 0xF) + 9 : (in[i] & 0xF)) << 4;
+		p[idx] += (in[i + 1] & 0x40) ? (in[i + 1] & 0xF) + 9 : in[i + 1] & 0xF;
+	}
+	return idx;
 }
 
 struct ctr_state { 
@@ -49,23 +64,59 @@ void init_ctr(struct ctr_state *state, const unsigned char iv[16]){
     memcpy(state->ivec, iv, 16);
 } 
 
+int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
+	int ret = 0;
+	AES_KEY aes_key;
+	int nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
+	if (nblocks == 1) {
+
+	} else if (nblocks > 1) {
+		if (AES_set_encrypt_key(key, 128, &aes_key)<0){
+			printf("key error");
+			exit(-1);
+		}
+		ret = CRYPTO_cts128_encrypt(data, out, datalen, &aes_key, iv, (cbc128_f)AES_cbc_encrypt);
+	}
+	return ret;
+}
+
+int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
+	int ret = 0;
+	AES_KEY aes_key;
+	int nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
+	if (nblocks == 1) {
+
+	} else if (nblocks > 1) {
+		if (AES_set_decrypt_key(key, 128, &aes_key)<0){
+			printf("key error");
+			exit(-1);
+		}
+		ret = CRYPTO_cts128_decrypt(data, out, datalen, &aes_key, iv, (cbc128_f)AES_cbc_encrypt);
+	}
+	return ret;
+}
+
 void main(){
-    unsigned char * cypher = extochar("874d6191b620e3261bef6864990db6ce",32);
-    unsigned char * key = extochar("2b7e151628aed2a6abf7158809cf4f3c",32);
-    unsigned char * iv = extochar("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",32);
-    unsigned char out[256]; //more than needed
+    unsigned char * key = extochar("49CB7071A3281DFADFE055438E6A5723",32);
+    unsigned char * iv =  extochar("00000000000000000000000000000000",32);
+    unsigned char msg[256], encoded[256]; //more than needed
     AES_KEY aes_key;
-    int msg_len = 16;
-    struct ctr_state status; 
+    int msg_len;
 
-    if (AES_set_encrypt_key(key, 128, &aes_key)<0){
-        printf("key error"); 
-        exit(-1);
-    }
+    printf("%s %d -> %s \n", "key", 16, bytetohexstring(key, 16));
+    printf("%s %d -> %s \n", "iv ", 16, bytetohexstring(iv , 16));
 
-    init_ctr(&status, iv);
+    char *tp = "173C28698191D82E8B97DF654A0D6F6D5468697320697320616E6F7468657220746573742E0A";
+    msg_len = phrase_hex(tp, msg);
+    printf("%s %d -> %s \n", "msg", msg_len, bytetohexstring(msg, msg_len));
 
-    AES_ctr128_encrypt(cypher, out, msg_len, &aes_key, status.ivec, status.ecount, &status.num);
-//expected plaintext: "6bc1bee22e409f96e93d7e117393172a"
-	printf(" -> %s \n", bytetohexstring(out, 16));
+    int encodedlen = cts128_encrypt(key, 16, msg, msg_len, iv, encoded);
+    printf("%s %d -> %s \n", "enc", encodedlen, bytetohexstring(encoded, encodedlen));
+    //expected: 78a2e5861d44a7a4bb98ffa9510a8c7c9651496daa0b676339cca8988c358a37306a7091554c
+
+    memset(iv, 0, 16);
+
+    unsigned char decoded[256];
+    int decodedlen = cts128_decrypt(key, 16, encoded, encodedlen, iv, decoded);
+    printf("%s %d -> %s \n", "dec", decodedlen, bytetohexstring(decoded, decodedlen));
 }
