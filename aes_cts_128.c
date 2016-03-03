@@ -96,6 +96,22 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 	return ret;
 }
 
+int cbc_encry (unsigned char *key, unsigned char *iv, unsigned char *data, unsigned char *out) {
+	int ret = 0, outlen = BLOCK_SIZE;
+	EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX_init(&ctx);
+	
+	ret = EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv);
+	if (ret == 0) {
+		return 0;
+	}
+	EVP_CIPHER_CTX_set_padding(&ctx, 0);
+	ret = EVP_EncryptUpdate(&ctx, out, &outlen, data, BLOCK_SIZE);
+	EVP_CIPHER_CTX_cleanup(&ctx);
+	return ret;
+}
+
+
 void main(int argv, char *args[]){
 
     unsigned char * key = extochar(args[2],32);
