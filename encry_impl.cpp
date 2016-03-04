@@ -1,7 +1,7 @@
 #include <jni.h>
 #include <jni_md.h>
-#include </home/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
-//#include </home/Kerby/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
+//#include </home/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
+#include </home/Kerby/directory-kerby/kerby-kerb/kerb-crypto/src/main/java/org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -319,16 +319,10 @@ JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_prov
 	bool encrypt = jencrypt == JNI_TRUE;
 int i = 1;
 	unsigned char *buf = (unsigned char *)malloc(datalen +64);
-        unsigned char *ndata = (unsigned char *)malloc(datalen);
-        unsigned char *nkey = (unsigned char *)malloc(keylen);
-        unsigned char *niv = (unsigned char *)malloc(ivlen);
-	memcpy(ndata, data, datalen);
-	memcpy(nkey, key, keylen);
-	memcpy(niv, iv, ivlen);
 //while(i);
 	//int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
 	//			cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
-	int retlen = dl_encry(encrypt?1:0, nkey, 16, ndata, datalen, niv, buf);
+	int retlen = dl_encry(encrypt?1:0, key, 16, data, datalen, iv, buf);
 //fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
 //fclose(fp);
 	memcpy(data, buf, retlen);
