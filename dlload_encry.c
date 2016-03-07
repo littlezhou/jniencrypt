@@ -2,11 +2,15 @@
 #include <string.h>
 #include <stdlib.h>
 #include <dlfcn.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include <openssl/evp.h>
 #include <openssl/aes.h>
 #include <openssl/modes.h>
 
 #define BLOCK_SIZE 16
+
+double getseconds(struct timeval last, struct timeval current);
 
 int chartoint(char car) {
 }
@@ -65,6 +69,8 @@ void init_ctr(struct ctr_state *state, const unsigned char iv[16]){
     memcpy(state->ivec, iv, 16);
 } 
 
+void dl_symbols();
+
 int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
 	int ret = 0;
 	AES_KEY aes_key;
@@ -97,6 +103,7 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 	return ret;
 }
 
+
 typedef size_t (*FUN_CTS128_CRYPT)(const unsigned char *in, unsigned char *out,  
                              size_t len, const void *key,  
                              unsigned char ivec[16], cbc128_f cbc);  
@@ -106,28 +113,90 @@ typedef void (*FUN_AES_CBC)(const unsigned char *in, unsigned char *out,
        unsigned char *ivec, const int enc);
 
 typedef int (*FUN_SET_KEY)(const unsigned char *userKey, const int bits,  AES_KEY *key);
-
-
-int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
-{
 	static FUN_CTS128_CRYPT cts_encrypt = NULL;
 	static FUN_CTS128_CRYPT cts_decrypt = NULL;
 	static FUN_AES_CBC	aes_cbc	    = NULL;
 	static FUN_SET_KEY	set_en_key  = NULL;
 	static FUN_SET_KEY	set_de_key  = NULL;
 
-    char *err;
-    void *so_handle;
-    char soname[] = "/usr/lib64/libcrypto.so";
 
-	int nblocks = 0;
-	int ret = 0;
-	AES_KEY aes_key;
-	FUN_CTS128_CRYPT do_proc;
-	FUN_SET_KEY	 set_key;
 
+typedef void (*FUN_EVP_CIPHER_INIT)(EVP_CIPHER_CTX *a);
+typedef int (*FUN_EVP_INIT)(EVP_CIPHER_CTX *ctx,const EVP_CIPHER *cipher, ENGINE *impl, const unsigned char *key, const unsigned char *iv);
+typedef EVP_CIPHER * (*FUN_EVP_CIPHER)(void);
+typedef int (*FUN_EVP_CIPHER_CTX_SET_PADDING)(EVP_CIPHER_CTX *x, int padding);
+typedef int (*FUN_EVP_UPDATE)(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl, unsigned char *in, int inl);
+typedef int (*FUN_EVP_CIPHER_CTX_CLEANUP)(EVP_CIPHER_CTX *a);
+
+static FUN_EVP_CIPHER_INIT 	fc_ctx_init = NULL;
+static FUN_EVP_INIT		fc_en_init  = NULL;
+static FUN_EVP_INIT		fc_de_init  = NULL;
+static FUN_EVP_CIPHER		fc_aes_128_cbc = NULL;
+static FUN_EVP_CIPHER_CTX_SET_PADDING fc_set_padding = NULL;
+static FUN_EVP_UPDATE		fc_en_update= NULL;
+static FUN_EVP_UPDATE		fc_de_update= NULL;
+static FUN_EVP_CIPHER_CTX_CLEANUP fc_cleanup = NULL;
+
+
+typedef int (*FUN_EVP_CipherInit_EX)(EVP_CIPHER_CTX *, const EVP_CIPHER *,  \
+           ENGINE *, const unsigned char *, const unsigned char *, int);
+
+static FUN_EVP_CIPHER		fc_aes_128_ctr = NULL;
+static FUN_EVP_UPDATE		fc_ctr_update =  NULL;
+static FUN_EVP_CipherInit_EX  	fc_CipherInit_EX = NULL;
+
+int dl_aes_128_ctr(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)
+{
+	FUN_EVP_UPDATE c_update;
+	int ret, outlen = datalen;
+	EVP_CIPHER_CTX ctx;
+int i=0;
+while(i);
+	if(cts_encrypt == NULL )
+		dl_symbols();
+
+	c_update = fc_ctr_update;
+
+        fc_ctx_init(&ctx);
+
+	ret = fc_CipherInit_EX(&ctx, fc_aes_128_ctr(), NULL, key, iv, encrypt);
+        if (ret == 0) {
+                return 0;
+        }
+        fc_set_padding(&ctx, 0);
+        ret = c_update(&ctx, out, &outlen, data, datalen);
+        fc_cleanup(&ctx);
+        return outlen;
+}
+
+
+int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned char *data, unsigned char *out) {
+	FUN_EVP_INIT c_init = encrypt ? fc_en_init : fc_de_init;
+	FUN_EVP_UPDATE c_update = encrypt ? fc_en_update : fc_de_update; 
+        int ret = 0, outlen = BLOCK_SIZE;
+        EVP_CIPHER_CTX ctx;
+        fc_ctx_init(&ctx);
+
+        ret = c_init(&ctx, fc_aes_128_cbc(), NULL, key, iv);
+        if (ret == 0) {
+                return 0;
+        }
+        fc_set_padding(&ctx, 0);
+        ret = c_update(&ctx, out, &outlen, data, BLOCK_SIZE);
+        fc_cleanup(&ctx);
+        return ret == 1 ? BLOCK_SIZE : 0;
+}
+
+
+void dl_symbols() {
     if(cts_encrypt == NULL )
 {
+    char *err;
+    void *so_handle;
+    //char soname[] = "/usr/lib64/libcrypto.so";
+    char soname[] = "/home/OpenSRC/openssl/libcrypto.so.1.1";
+
+
     so_handle = dlopen(soname, RTLD_LAZY);
     if (!so_handle) {  
         fprintf(stderr, "Error: load so `%s' failed./n", soname);  
@@ -171,12 +240,106 @@ int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, i
         exit(-1);  
     }
 
+    //fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_init");
+    fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_en_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_EncryptInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_de_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_DecryptInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_aes_128_cbc = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_ecb");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_aes_128_ctr = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_ctr");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_set_padding = (FUN_EVP_CIPHER_CTX_SET_PADDING)dlsym(so_handle, "EVP_CIPHER_CTX_set_padding");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_en_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_EncryptUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_de_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_DecryptUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_ctr_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_CipherUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    //fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_cleanup");
+    fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
+
+    fc_CipherInit_EX = (FUN_EVP_CipherInit_EX)dlsym(so_handle, "EVP_CipherInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s/n", err);
+        exit(-1);
+    }
     dlclose(so_handle);
 }
+}
+
+
+int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
+{
+	int nblocks = 0;
+	int ret = 0;
+	AES_KEY aes_key;
+	FUN_CTS128_CRYPT do_proc;
+	FUN_SET_KEY	 set_key;
+
+	if(cts_encrypt == NULL )
+		dl_symbols();
 
 	nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
 	if (nblocks == 1) {
-
+		if (datalen != BLOCK_SIZE) {
+			return 0;
+		}
+		ret = dl_cbc_encry(encrypt, key, iv, data, out);
 	} else if (nblocks > 1) {
 		do_proc = encrypt ? cts_encrypt : cts_decrypt;
 		set_key = encrypt ? set_en_key : set_de_key;
@@ -189,8 +352,55 @@ int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, i
 	return ret;
 }
 
+
+void test()
+{
+	struct timeval stm, etm;
+	double tm_comp;
+	int i;
+	int datalen = 16 *1024 *1024, outlen=0;
+	unsigned char *data, *out;
+	int round = 200;
+
+	unsigned char *key, *iv;
+	data= (unsigned char*)malloc(datalen);
+	key = (unsigned char*)malloc(16);
+	iv  = (unsigned char*)malloc(16);
+	memset(iv, 0, 16);
+
+
+	dl_symbols();
+
+	for(i=0; i<datalen; i++)
+	{
+		data[i] = i%26 + 'A';
+	}
+
+	for(i=0; i<16; i++)
+	{
+		key[i] = i%26 + 'A';
+	}
+
+	out = data;
+	out= (unsigned char*)malloc(datalen);
+
+	gettimeofday(&stm, NULL);
+
+	for(i=0; i<round; i++)
+	{
+		outlen += dl_encry(1, key, 16, data, datalen, iv, out);
+		//outlen += dl_aes_128_ctr(1, key, 16, data, datalen, iv, out);
+	}
+
+	gettimeofday(&etm, NULL);
+	tm_comp = getseconds(stm, etm) *1000.0;
+	printf("Iter=%d time=%0.3fms time/round=%0.3fms size=%0.3fMB\n",
+                        round, tm_comp, tm_comp/round, outlen/1024.0/1024);
+}
+
 void main(int argv, char *args[]){
 
+	return test();
     unsigned char * key = extochar(args[2],32);
     unsigned char * iv =  extochar(args[3],32);
     unsigned char msg[256], encoded[256]; //more than needed
@@ -215,4 +425,14 @@ void main(int argv, char *args[]){
     //int decodedlen = cts128_decrypt(key, 16, encoded, encodedlen, iv, decoded);
     int decodedlen = dl_encry(0, key, 16, encoded, encodedlen, iv, decoded);
     printf("%s %d -> %s \n", "dec", decodedlen, bytetohexstring(decoded, decodedlen));
+}
+
+
+
+double getseconds(struct timeval last, struct timeval current) {
+  int sec, usec;
+
+  sec = current.tv_sec - last.tv_sec;
+  usec = current.tv_usec - last.tv_usec;
+  return ( (double)sec + usec*((double)(1e-6)) );
 }

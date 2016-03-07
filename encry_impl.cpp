@@ -11,6 +11,8 @@
 #include <dlfcn.h>
 
 #define BLOCK_SIZE 16
+void dl_symbols();
+
 
 int chartoint(char car) {
 }
@@ -69,6 +71,8 @@ void init_ctr(struct ctr_state *state, const unsigned char iv[16]){
     memcpy(state->ivec, iv, 16);
 } 
 
+void dl_symbols();
+
 int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
 	int ret = 0;
 	AES_KEY aes_key;
@@ -121,7 +125,7 @@ typedef int (*FUN_SET_KEY)(const unsigned char *userKey, const int bits,  AES_KE
 
 typedef void (*FUN_EVP_CIPHER_INIT)(EVP_CIPHER_CTX *a);
 typedef int (*FUN_EVP_INIT)(EVP_CIPHER_CTX *ctx,const EVP_CIPHER *cipher, ENGINE *impl, const unsigned char *key, const unsigned char *iv);
-typedef EVP_CIPHER * (*FUN_EVP_AES)(void);
+typedef EVP_CIPHER * (*FUN_EVP_CIPHER)(void);
 typedef int (*FUN_EVP_CIPHER_CTX_SET_PADDING)(EVP_CIPHER_CTX *x, int padding);
 typedef int (*FUN_EVP_UPDATE)(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl, unsigned char *in, int inl);
 typedef int (*FUN_EVP_CIPHER_CTX_CLEANUP)(EVP_CIPHER_CTX *a);
@@ -129,11 +133,44 @@ typedef int (*FUN_EVP_CIPHER_CTX_CLEANUP)(EVP_CIPHER_CTX *a);
 static FUN_EVP_CIPHER_INIT 	fc_ctx_init = NULL;
 static FUN_EVP_INIT		fc_en_init  = NULL;
 static FUN_EVP_INIT		fc_de_init  = NULL;
-static FUN_EVP_AES		fc_aes_128_cbc = NULL;
+static FUN_EVP_CIPHER		fc_aes_128_cbc = NULL;
 static FUN_EVP_CIPHER_CTX_SET_PADDING fc_set_padding = NULL;
 static FUN_EVP_UPDATE		fc_en_update= NULL;
 static FUN_EVP_UPDATE		fc_de_update= NULL;
 static FUN_EVP_CIPHER_CTX_CLEANUP fc_cleanup = NULL;
+
+
+typedef int (*FUN_EVP_CipherInit_EX)(EVP_CIPHER_CTX *, const EVP_CIPHER *,  \
+           ENGINE *, const unsigned char *, const unsigned char *, int);
+
+static FUN_EVP_CIPHER		fc_aes_128_ctr = NULL;
+static FUN_EVP_UPDATE		fc_ctr_update =  NULL;
+static FUN_EVP_CipherInit_EX  	fc_CipherInit_EX = NULL;
+
+int dl_aes_128_ctr(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)
+{
+	FUN_EVP_UPDATE c_update;
+	int ret, outlen = datalen;
+	EVP_CIPHER_CTX ctx;
+int i=0;
+while(i);
+	if(cts_encrypt == NULL )
+		dl_symbols();
+
+	c_update = fc_ctr_update;
+
+        fc_ctx_init(&ctx);
+
+	ret = fc_CipherInit_EX(&ctx, fc_aes_128_ctr(), NULL, key, iv, encrypt);
+        if (ret == 0) {
+                return 0;
+        }
+        fc_set_padding(&ctx, 0);
+        ret = c_update(&ctx, out, &outlen, data, datalen);
+        fc_cleanup(&ctx);
+        return outlen;
+}
+
 
 int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned char *data, unsigned char *out) {
 	FUN_EVP_INIT c_init = encrypt ? fc_en_init : fc_de_init;
@@ -152,118 +189,6 @@ int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned c
         return ret == 1 ? BLOCK_SIZE : 0;
 }
 
-
-void dl_symbols() {
-    if(cts_encrypt == NULL )
-{
-    char *err;
-    void *so_handle;
-    char soname[] = "/usr/lib64/libcrypto.so";
-
-
-    so_handle = dlopen(soname, RTLD_LAZY);
-    if (!so_handle) {  
-        fprintf(stderr, "Error: load so `%s' failed./n", soname);  
-        exit(-1);  
-    }  
-  
-    dlerror(); 
-
-    cts_decrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_decrypt"); 
-    err = dlerror();  
-    if (NULL != err) {  
-        fprintf(stderr, "%s/n", err);  
-        exit(-1);  
-    }
-
-    cts_encrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_encrypt"); 
-    err = dlerror();  
-    if (NULL != err) {  
-        fprintf(stderr, "%s/n", err);  
-        exit(-1);  
-    }
-
-    aes_cbc = (FUN_AES_CBC)dlsym(so_handle, "AES_cbc_encrypt"); 
-    err = dlerror();  
-    if (NULL != err) {  
-        fprintf(stderr, "%s/n", err);  
-        exit(-1);  
-    }
-
-    set_en_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_encrypt_key"); 
-    err = dlerror();  
-    if (NULL != err) {  
-        fprintf(stderr, "%s/n", err);  
-        exit(-1);  
-    }
-
-    set_de_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_decrypt_key"); 
-    err = dlerror();  
-    if (NULL != err) {  
-        fprintf(stderr, "%s/n", err);  
-        exit(-1);  
-    }
-
-    fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_init");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_en_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_EncryptInit_ex");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_de_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_DecryptInit_ex");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_aes_128_cbc = (FUN_EVP_AES)dlsym(so_handle, "EVP_aes_128_ecb");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_set_padding = (FUN_EVP_CIPHER_CTX_SET_PADDING)dlsym(so_handle, "EVP_CIPHER_CTX_set_padding");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_en_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_EncryptUpdate");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_de_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_DecryptUpdate");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_cleanup");
-    err = dlerror();
-    if (NULL != err) {
-        fprintf(stderr, "%s/n", err);
-        exit(-1);
-    }
-
-    dlclose(so_handle);
-}
-
-}
 
 
 int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
@@ -295,7 +220,7 @@ int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, i
 	return ret;
 }
 
-
+unsigned char *st_data = NULL;
 
 JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_provider_OpenSSLNative_doEncryptAes128
   (JNIEnv * env, jobject obj, jbyteArray jdata, jbyteArray jkey, jbyteArray jiv, jboolean jencrypt) 
@@ -315,25 +240,30 @@ JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_prov
 //fprintf(fp, "%s %d -> %s \n", "data", datalen, bytetohexstring(data, datalen)); fflush(fp);
 //fprintf(fp, "%s %d -> %s \n", "key", keylen, bytetohexstring(key, keylen)); fflush(fp);
 //fprintf(fp, "%s %d -> %s \n", "iv ", ivlen, bytetohexstring(iv , ivlen)); fflush(fp);
+	if (st_data == NULL) {
+		st_data = (unsigned char*)malloc(16*1024*1024);
+	}
 
 	bool encrypt = jencrypt == JNI_TRUE;
 int i = 1;
-	unsigned char *buf = (unsigned char *)malloc(datalen +64);
+	//unsigned char *buf = (unsigned char *)malloc(datalen +64);
 //while(i);
 	//int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
 	//			cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
-	int retlen = dl_encry(encrypt?1:0, key, 16, data, datalen, iv, buf);
+	int retlen = dl_encry(encrypt?1:0, key, 16, st_data, datalen, iv, st_data);
+	//int retlen = dl_aes_128_ctr(encrypt?1:0, key, 16, data, datalen, iv, data);
+
 //fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
 //fclose(fp);
-	memcpy(data, buf, retlen);
+	//memcpy(data, buf, retlen);
 	jbyteArray jret = env->NewByteArray(retlen);
 	env->SetByteArrayRegion(jret, 0, retlen, pjdata);
-	env->ReleaseByteArrayElements(jret, pjdata, 0);
+	env->ReleaseByteArrayElements(jret, pjdata, JNI_ABORT);
 
-	env->ReleaseByteArrayElements(jkey, pjkey, 0);
-	env->ReleaseByteArrayElements(jiv,  pjiv, 0);
+	env->ReleaseByteArrayElements(jkey, pjkey, JNI_ABORT);
+	env->ReleaseByteArrayElements(jiv,  pjiv, JNI_ABORT);
 
-	free(buf);
+	//free(buf);
 	return jret;
 }
 
@@ -365,3 +295,137 @@ void main(){
     int decodedlen = cts128_decrypt(key, 16, encoded, encodedlen, iv, decoded);
     printf("%s %d -> %s \n", "dec", decodedlen, bytetohexstring(decoded, decodedlen));
 } */
+
+
+void dl_symbols() {
+    if(cts_encrypt == NULL )
+{
+    char *err;
+    void *so_handle;
+    char soname[] = "/usr/lib64/libcrypto.so";
+
+
+    so_handle = dlopen(soname, RTLD_LAZY);
+    if (!so_handle) {  
+        fprintf(stderr, "Error: load so `%s' failed.\n", soname);  
+        exit(-1);  
+    }  
+  
+    dlerror(); 
+
+    cts_decrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_decrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s\n", err);  
+        exit(-1);  
+    }
+
+    cts_encrypt = (FUN_CTS128_CRYPT)dlsym(so_handle, "CRYPTO_cts128_encrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s\n", err);  
+        exit(-1);  
+    }
+
+    aes_cbc = (FUN_AES_CBC)dlsym(so_handle, "AES_cbc_encrypt"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s\n", err);  
+        exit(-1);  
+    }
+
+    set_en_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_encrypt_key"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s\n", err);  
+        exit(-1);  
+    }
+
+    set_de_key = (FUN_SET_KEY)dlsym(so_handle, "AES_set_decrypt_key"); 
+    err = dlerror();  
+    if (NULL != err) {  
+        fprintf(stderr, "%s\n", err);  
+        exit(-1);  
+    }
+
+    fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_init");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_en_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_EncryptInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_de_init = (FUN_EVP_INIT)dlsym(so_handle, "EVP_DecryptInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_aes_128_cbc = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_ecb");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_aes_128_ctr = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_ctr");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_set_padding = (FUN_EVP_CIPHER_CTX_SET_PADDING)dlsym(so_handle, "EVP_CIPHER_CTX_set_padding");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_en_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_EncryptUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_de_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_DecryptUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_ctr_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_CipherUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_cleanup");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_CipherInit_EX = (FUN_EVP_CipherInit_EX)dlsym(so_handle, "EVP_CipherInit_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+    dlclose(so_handle);
+}
+}
+
+
