@@ -70,7 +70,7 @@ void init_ctr(struct ctr_state *state, const unsigned char iv[16]){
 } 
 
 void dl_symbols();
-
+/*
 int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
 	int ret = 0;
 	AES_KEY aes_key;
@@ -102,7 +102,7 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 	}
 	return ret;
 }
-
+*/
 
 typedef size_t (*FUN_CTS128_CRYPT)(const unsigned char *in, unsigned char *out,  
                              size_t len, const void *key,  
@@ -193,8 +193,9 @@ void dl_symbols() {
 {
     char *err;
     void *so_handle;
-    //char soname[] = "/usr/lib64/libcrypto.so";
-    char soname[] = "/home/OpenSRC/openssl/libcrypto.so.1.1";
+    char soname[] = "/usr/lib64/libcrypto.so";
+    //char soname[] = "/home/OpenSRC/openssl/libcrypto.so.1.1";
+    //char soname[] = "/root/Downloads/openssl-1.0.1s/libcrypto.so";
 
 
     so_handle = dlopen(soname, RTLD_LAZY);
@@ -240,8 +241,8 @@ void dl_symbols() {
         exit(-1);  
     }
 
-    //fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_init");
-    fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
+    fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_init");
+    //fc_ctx_init = (FUN_EVP_CIPHER_INIT)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
     err = dlerror();
     if (NULL != err) {
         fprintf(stderr, "%s/n", err);
@@ -304,8 +305,8 @@ void dl_symbols() {
         exit(-1);
     }
 
-    //fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_cleanup");
-    fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
+    fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_cleanup");
+    //fc_cleanup = (FUN_EVP_CIPHER_CTX_CLEANUP)dlsym(so_handle, "EVP_CIPHER_CTX_reset");
     err = dlerror();
     if (NULL != err) {
         fprintf(stderr, "%s/n", err);
