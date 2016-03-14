@@ -162,15 +162,16 @@ init();
 	    }
 	}
 
-	    if(!EVP_EncryptFinal_ex(&ctx, out + outlen, &leftlen))
+		if(!EVP_EncryptFinal_ex(&ctx, data, &leftlen))
+	    //if(!EVP_EncryptFinal_ex(&ctx, out + outlen, &leftlen))
 	    {
 	        return 0;
 	    }
-	    outlen += leftlen;
 	
 
+
     EVP_CIPHER_CTX_cleanup(&ctx);
-    return outlen;
+    return 1;
 }
 
 
@@ -231,6 +232,11 @@ int test_cbc128_encry(int encrypt, unsigned char *key, unsigned char *data, size
 }
 
 
+static unsigned char key16[16] = {
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+        0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12
+    };
+
 void test()
 {
 	struct timeval stm, etm;
@@ -246,6 +252,8 @@ void test()
 
 	unsigned char *key, *iv;
 	data= (unsigned char*)malloc(datalen);
+//data = (unsigned char *)OPENSSL_malloc( datalen +1 );
+
 	key = (unsigned char*)malloc(16);
 	iv  = (unsigned char*)malloc(16);
 	memset(iv, 0, 16);
@@ -261,6 +269,7 @@ void test()
 		key[i] = i%26 + 'A';
 	}
 
+//key = key16;
 	out = data;
 	//out= (unsigned char*)malloc(datalen);
 
@@ -278,10 +287,11 @@ void test()
 		
 		//ret = test_cbc128_encry(1, key, data, datalen, iv, out);  // Error
 		//ret = test_cbc128(1, key, data, datalen, iv, out);
-		ret = do_cbc_evp_encrypt__round(data, datalen, key, iv, out, round);
-		
-		outlen += ret;
+		//ret = do_cbc_evp_encrypt(data, datalen, key, iv, out);
+		//outlen += ret;
 
+		ret = do_cbc_evp_encrypt__round(data, datalen, key, iv, out, round);
+		outlen = round* 1.0 * datalen ;
 		break;
 	}
 	gettimeofday(&etm, NULL);
@@ -301,7 +311,7 @@ void test()
 #define SET_BIT(V, idx) ((V) | (((unsigned long)1)<<(idx)))
 
 void main(int argv, char *args[]){
-	unsigned long *puid = OPENSSL_ia32cap_loc();
+/*	unsigned long *puid = OPENSSL_ia32cap_loc();
 	unsigned long myid = ~0;
 	myid = SET_BIT(myid, 4);
 	myid = SET_BIT(myid, 23);
@@ -311,7 +321,7 @@ void main(int argv, char *args[]){
 	myid = SET_BIT(myid, 57);
 	myid = SET_BIT(myid, 60);
 	*puid = (*puid) | (myid);
-	printf("UID: %016llX \n", *puid);
+	printf("UID: %016llX \n", *puid); */
 	return test();
 }
 

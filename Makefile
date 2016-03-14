@@ -20,3 +20,6 @@ openssltest:
 
 # gcc st_encry.c -std=c99 -g -O0 -o st_encry -ldl -L/root/Downloads/openssl-1.0.1s -lcrypto
 # gcc speed.c  -o x -I/root/Downloads/openssl-1.0.1s -lcrypto -lssl
+#
+#
+# gcc st_encry.c -std=c99 -g -O3 -o st_encry -lcrypto  can goto >800MB/s
