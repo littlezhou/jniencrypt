@@ -358,10 +358,11 @@ void test()
 {
 	struct timeval stm, etm;
 	double tm_comp;
-	int i;
-	int datalen = 16 *1024 *1024, outlen=0;
+	int i, ret;
+	int datalen = 8*1024; //16 *1024 *1024;
+	long outlen=0;
 	unsigned char *data, *out;
-	int round = 200;
+	int round = 200000;
 
 	unsigned char *key, *iv;
 	data= (unsigned char*)malloc(datalen);
@@ -389,14 +390,16 @@ void test()
 
 	for(i=0; i<round; i++)
 	{
-		outlen += dl_encry(1, key, 16, data, datalen, iv, out);
-		//outlen += dl_aes_128_ctr(1, key, 16, data, datalen, iv, out);
+		//ret = dl_encry(1, key, 16, data, datalen, iv, out);
+		//ret = dl_aes_128_ctr(1, key, 16, data, datalen, iv, out);
+		ret = dl_cbc_encry (1, key, iv, data, out); 
+		outlen += ret;
 	}
 
 	gettimeofday(&etm, NULL);
 	tm_comp = getseconds(stm, etm) *1000.0;
 	printf("Iter=%d time=%0.3fms time/round=%0.3fms size=%0.3fMB\n",
-                        round, tm_comp, tm_comp/round, outlen/1024.0/1024);
+                        round, tm_comp, tm_comp/round, outlen/1024.0/1024/1000/tm_comp);
 }
 
 void main(int argv, char *args[]){

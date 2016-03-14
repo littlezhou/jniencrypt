@@ -110,6 +110,113 @@ int test_cbc128(int encrypt, unsigned char *key, unsigned char *data, size_t dat
 	return encr;
 }
 
+int do_cbc_evp_encrypt(unsigned char *data, int datalen, unsigned char *key, unsigned char *iv, unsigned char *out )
+{
+    int outlen, leftlen;
+    EVP_CIPHER_CTX ctx;
+    EVP_CIPHER_CTX_init(&ctx);
+    EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv);
+    EVP_CIPHER_CTX_set_padding(&ctx, 0);
+    if(!EVP_EncryptUpdate(&ctx, out, &outlen, data, datalen))
+    {
+        return 0; // error
+    }
+
+    if(!EVP_EncryptFinal_ex(&ctx, out + outlen, &leftlen))
+    {
+        return 0;
+    }
+    outlen += leftlen;
+    EVP_CIPHER_CTX_cleanup(&ctx);
+    return outlen;
+}
+
+void init()
+{
+	OpenSSL_add_all_algorithms();
+	OpenSSL_add_all_ciphers();
+	OpenSSL_add_all_digests();
+}
+
+int do_cbc_evp_encrypt__round(unsigned char *data, int datalen, unsigned char *key, unsigned char *iv, unsigned char *out, int nround)
+{
+    int i, outlen, leftlen;
+
+    char *algo = "aes-128-cbc";
+    const EVP_CIPHER *evp_cipher = NULL;
+
+init();
+
+    evp_cipher = EVP_get_cipherbyname(algo);
+
+    EVP_CIPHER_CTX ctx;
+    EVP_CIPHER_CTX_init(&ctx);
+    EVP_EncryptInit_ex(&ctx, evp_cipher, NULL, key, iv);   //EVP_aes_128_cbc()
+    EVP_CIPHER_CTX_set_padding(&ctx, 0);
+
+    for(i = 0; i<nround; i++)
+    {
+	    if(!EVP_EncryptUpdate(&ctx, out, &outlen, data, datalen))
+	    {
+	        return 0; // error
+	    }
+	}
+
+	    if(!EVP_EncryptFinal_ex(&ctx, out + outlen, &leftlen))
+	    {
+	        return 0;
+	    }
+	    outlen += leftlen;
+	
+
+    EVP_CIPHER_CTX_cleanup(&ctx);
+    return outlen;
+}
+
+
+int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
+                             size_t datalen, unsigned char *key,
+                             unsigned char iv[16])
+{
+    size_t residue;
+    union {
+        size_t align;
+        unsigned char c[16];
+    } tmp;
+
+    if(!(data && out && key && iv)) {
+		return 0;
+	}
+
+    if (datalen <= 16)
+        return 0;
+
+    if ((residue = datalen % 16) == 0)
+        residue = 16;
+
+    datalen -= residue;
+
+    //(*cbc) (data, out, datalen, key, iv, 1);
+	do_cbc_evp_encrypt(data, datalen, key, iv, out);
+
+    data += datalen;
+    out += datalen;
+
+#if defined(CBC_HANDLES_TRUNCATED_IO)
+    memcpy(tmp.c, out - 16, 16);
+    (*cbc) (data, out - 16, residue, key, iv, 1);
+    memcpy(out, tmp.c, residue);
+#else
+    memset(tmp.c, 0, sizeof(tmp));
+    memcpy(tmp.c, data, residue);
+    memcpy(out, out - 16, residue);
+    //(*cbc) (tmp.c, out - 16, 16, key, iv, 1);
+	do_cbc_evp_encrypt(tmp.c, 16, key, iv, out - 16);
+#endif
+    return datalen + residue;
+}
+
+
 
 int test_cbc128_encry(int encrypt, unsigned char *key, unsigned char *data, size_t datalen, unsigned char *iv, unsigned char *out) {
 	if(encrypt)
@@ -129,10 +236,13 @@ void test()
 	struct timeval stm, etm;
 	double tm_comp;
 	int i;
-	int datalen = 16 * 1024 * 1024;
-	int outlen = 0;
+	int datalen = 8*1024; //16*1024*1024;
+	int ret;
+	double outlen = 0;
 	unsigned char *data, *out;
-	int round = 200;
+	int round = 599999;
+	
+	int dbg = 0;
 
 	unsigned char *key, *iv;
 	data= (unsigned char*)malloc(datalen);
@@ -155,26 +265,53 @@ void test()
 	//out= (unsigned char*)malloc(datalen);
 
 	printf("data=%p key=%p iv=%p out=%p \n", data, key, iv, out);
+	printf("%s %d -> %s \n", "res", datalen, bytetohexstring(out, datalen>32?32:datalen));
+	printf("%s %d -> %s \n", "key", 16, bytetohexstring(key, 16));
+	printf("%s %d -> %s \n", "iv ", 16, bytetohexstring(iv , 16));
+	printf("\n\n");
 	gettimeofday(&stm, NULL);
 
 	for(i=0; i<round; i++)
 	{
-		outlen += cts128_encrypt(key, 16, data, datalen, iv, out);
-		//outlen += dl_encry(1, key, 16, data, datalen, iv, out);
-		//outlen += dl_aes_128_ctr(1, key, 16, data, datalen, iv, out);
-		//outlen += test_cbc128_encry(1, key, data, datalen, iv, out);
-		//outlen += test_cbc128(1, key, data, datalen, iv, out);
-		//printf("%s %d -> %s \n", "res", 16, bytetohexstring(out, 16));
-	}
+		//ret = cts128_encrypt(key, 16, data, datalen, iv, out);
+		//ret = do_cts_evp_encrypt(data, out, datalen, key, iv);
+		
+		//ret = test_cbc128_encry(1, key, data, datalen, iv, out);  // Error
+		//ret = test_cbc128(1, key, data, datalen, iv, out);
+		ret = do_cbc_evp_encrypt__round(data, datalen, key, iv, out, round);
+		
+		outlen += ret;
 
+		break;
+	}
 	gettimeofday(&etm, NULL);
-	tm_comp = getseconds(stm, etm) *1000.0;
-	printf("Iter=%d time=%0.3fms time/round=%0.3fms size=%0.3fMB\n",
-                        round, tm_comp, tm_comp/round, outlen/1024.0/1024);
+
+	unsigned long *puid = OPENSSL_ia32cap_loc();
+	printf("UID: %016llX \n", *puid);
+	
+	printf("%s %d -> %s \n", "res", datalen, bytetohexstring(out, datalen>32?32:datalen));
+		printf("%s %d -> %s \n", "key", 16, bytetohexstring(key, 16));
+		printf("%s %d -> %s \n", "iv ", 16, bytetohexstring(iv , 16));
+
+	tm_comp = getseconds(stm, etm);
+	printf("Iter=%d time=%0.3fms time/round=%0.3fms size=%0.3fMB/s\n",
+                        round, tm_comp * 1000.0, tm_comp *1000.0 /round, outlen/1024.0/1024/tm_comp);
 }
 
-void main(int argv, char *args[]){
+#define SET_BIT(V, idx) ((V) | (((unsigned long)1)<<(idx)))
 
+void main(int argv, char *args[]){
+	unsigned long *puid = OPENSSL_ia32cap_loc();
+	unsigned long myid = ~0;
+	myid = SET_BIT(myid, 4);
+	myid = SET_BIT(myid, 23);
+	myid = SET_BIT(myid, 25);
+	myid = SET_BIT(myid, 26);
+	myid = SET_BIT(myid, 41);
+	myid = SET_BIT(myid, 57);
+	myid = SET_BIT(myid, 60);
+	*puid = (*puid) | (myid);
+	printf("UID: %016llX \n", *puid);
 	return test();
 }
 

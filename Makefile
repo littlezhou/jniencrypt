@@ -14,6 +14,9 @@ clean:
 st_encry:
 	gcc st_encry.c -std=c99 -g -O0 -o st_encry -ldl 
 
+openssltest:
+	gcc openssltest.c -o openssltest -lcrypto -lssl
 
 
 # gcc st_encry.c -std=c99 -g -O0 -o st_encry -ldl -L/root/Downloads/openssl-1.0.1s -lcrypto
+# gcc speed.c  -o x -I/root/Downloads/openssl-1.0.1s -lcrypto -lssl
