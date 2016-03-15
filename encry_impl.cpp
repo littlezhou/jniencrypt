@@ -199,7 +199,7 @@ int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned c
 }
 
 // datalen > 16 bytes
-int do_cts_evp_encrypt(int encrypt, unsigned char *data, unsigned char *out,
+int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
                              size_t datalen, unsigned char *key,
                              unsigned char iv[16])
 {
@@ -223,7 +223,7 @@ int do_cts_evp_encrypt(int encrypt, unsigned char *data, unsigned char *out,
 
     datalen -= residue;
 
-	dl_cbc_encry (encrypt, key, iv, data, datalen, out);
+	dl_cbc_encry (1, key, iv, data, datalen, out);
 
     data += datalen;
     out += datalen;
@@ -236,12 +236,57 @@ int do_cts_evp_encrypt(int encrypt, unsigned char *data, unsigned char *out,
     memset(tmp.c, 0, sizeof(tmp));
     memcpy(tmp.c, data, residue);
     memcpy(out, out - 16, residue);
-	dl_cbc_encry (encrypt, key, iv, tmp.c, BLOCK_SIZE, out - BLOCK_SIZE);
+	dl_cbc_encry (1, key, iv, tmp.c, BLOCK_SIZE, out - BLOCK_SIZE);
 #endif
     return datalen + residue;
 }
 
+// datalen > 16 bytes
+int do_cts_evp_decrypt(unsigned char *data, unsigned char *out,
+                             size_t datalen, unsigned char *key,
+                             unsigned char iv[16])
+{
+    size_t residue;
+    union {
+        size_t align;
+        unsigned char c[32];
+    } tmp;
+	unsigned char *pc = tmp.c;
 
+    AES_KEY aes_key;
+
+    if(!(data && out && key && iv)) {
+		return 0;
+	}
+
+    if (datalen <= 16)
+        return 0;
+
+    if ((residue = datalen % 16) == 0)
+        residue = 16;
+
+    datalen -= residue + 16;
+
+	if (datalen)
+	{
+		dl_cbc_encry (0, key, iv, data, datalen, out);
+
+		data += datalen;
+		out += datalen;
+	}
+
+	memset(pc, 0, 32);
+	dl_cbc_encry (0, key, pc + 16, data, 16, pc);
+	memcpy(pc, data + 16, residue);
+
+#if defined(CBC_HANDLES_TRUNCATED_IO)
+	dl_cbc_encry (0, key, iv, pc, 16 + residue, out);
+#else
+	dl_cbc_encry (0, key, iv, pc, 32, pc);
+	memcpy(out, pc, 16 + residue);
+#endif
+    return datalen + residue + 16;
+}
 
 int dl_encry(int encrypt, unsigned char *key, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
 {
@@ -265,7 +310,8 @@ int dl_encry(int encrypt, unsigned char *key, unsigned char *data, int datalen, 
 		}
 		ret = do_proc(data, out, datalen, &aes_key, iv, (cbc128_f)aes_cbc);
 		*/
-		ret = do_cts_evp_encrypt(encrypt, data, out, datalen, key, iv);
+		ret = encrypt ? do_cts_evp_encrypt(data, out, datalen, key, iv) :
+				do_cts_evp_decrypt(data, out, datalen, key, iv);
 	} else if (nblocks == 1) {
 		if (datalen != BLOCK_SIZE) {
 			return 0;
