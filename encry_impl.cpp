@@ -128,6 +128,7 @@ typedef int (*FUN_EVP_INIT)(EVP_CIPHER_CTX *ctx,const EVP_CIPHER *cipher, ENGINE
 typedef EVP_CIPHER * (*FUN_EVP_CIPHER)(void);
 typedef int (*FUN_EVP_CIPHER_CTX_SET_PADDING)(EVP_CIPHER_CTX *x, int padding);
 typedef int (*FUN_EVP_UPDATE)(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl, unsigned char *in, int inl);
+typedef int (*FUN_EVP_FINAL)(EVP_CIPHER_CTX *ctx, unsigned char *out, int *outl);
 typedef int (*FUN_EVP_CIPHER_CTX_CLEANUP)(EVP_CIPHER_CTX *a);
 
 static FUN_EVP_CIPHER_INIT 	fc_ctx_init = NULL;
@@ -137,6 +138,8 @@ static FUN_EVP_CIPHER		fc_aes_128_cbc = NULL;
 static FUN_EVP_CIPHER_CTX_SET_PADDING fc_set_padding = NULL;
 static FUN_EVP_UPDATE		fc_en_update= NULL;
 static FUN_EVP_UPDATE		fc_de_update= NULL;
+static FUN_EVP_FINAL		fc_en_final = NULL;
+static FUN_EVP_FINAL		fc_de_final = NULL;
 static FUN_EVP_CIPHER_CTX_CLEANUP fc_cleanup = NULL;
 
 
@@ -172,10 +175,11 @@ while(i);
 }
 
 
-int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned char *data, unsigned char *out) {
+int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned char *data, int datalen, unsigned char *out) {
 	FUN_EVP_INIT c_init = encrypt ? fc_en_init : fc_de_init;
-	FUN_EVP_UPDATE c_update = encrypt ? fc_en_update : fc_de_update; 
-        int ret = 0, outlen = BLOCK_SIZE;
+	FUN_EVP_UPDATE c_update = encrypt ? fc_en_update : fc_de_update;
+	FUN_EVP_FINAL c_final = encrypt ? fc_en_final : fc_de_final;
+        int ret = 0, outlen, leftlen ;
         EVP_CIPHER_CTX ctx;
         fc_ctx_init(&ctx);
 
@@ -184,14 +188,62 @@ int dl_cbc_encry (int encrypt, unsigned char *key, unsigned char *iv, unsigned c
                 return 0;
         }
         fc_set_padding(&ctx, 0);
-        ret = c_update(&ctx, out, &outlen, data, BLOCK_SIZE);
+        if (!c_update(&ctx, out, &outlen, data, datalen))
+		return 0;
+
+	if (!c_final(&ctx, out + outlen, &leftlen))
+		return 0;
+	memcpy(iv, ctx.iv, 16);
         fc_cleanup(&ctx);
-        return ret == 1 ? BLOCK_SIZE : 0;
+        return datalen;
+}
+
+// datalen > 16 bytes
+int do_cts_evp_encrypt(int encrypt, unsigned char *data, unsigned char *out,
+                             size_t datalen, unsigned char *key,
+                             unsigned char iv[16])
+{
+    size_t residue;
+    union {
+        size_t align;
+        unsigned char c[16];
+    } tmp;
+
+    AES_KEY aes_key;
+
+    if(!(data && out && key && iv)) {
+		return 0;
+	}
+
+    if (datalen <= 16)
+        return 0;
+
+    if ((residue = datalen % 16) == 0)
+        residue = 16;
+
+    datalen -= residue;
+
+	dl_cbc_encry (encrypt, key, iv, data, datalen, out);
+
+    data += datalen;
+    out += datalen;
+
+#if defined(CBC_HANDLES_TRUNCATED_IO)
+    memcpy(tmp.c, out - 16, 16);
+    (*cbc) (data, out - 16, residue, key, iv, 1);
+    memcpy(out, tmp.c, residue);
+#else
+    memset(tmp.c, 0, sizeof(tmp));
+    memcpy(tmp.c, data, residue);
+    memcpy(out, out - 16, residue);
+	dl_cbc_encry (encrypt, key, iv, tmp.c, BLOCK_SIZE, out - BLOCK_SIZE);
+#endif
+    return datalen + residue;
 }
 
 
 
-int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
+int dl_encry(int encrypt, unsigned char *key, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out)  
 {
 	int nblocks = 0;
 	int ret = 0;
@@ -203,12 +255,8 @@ int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, i
 		dl_symbols();
 
 	nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
-	if (nblocks == 1) {
-		if (datalen != BLOCK_SIZE) {
-			return 0;
-		}
-		ret = dl_cbc_encry(encrypt, key, iv, data, out);
-	} else if (nblocks > 1) {
+	if (nblocks > 1) {
+		/*
 		do_proc = encrypt ? cts_encrypt : cts_decrypt;
 		set_key = encrypt ? set_en_key : set_de_key;
 		if (set_key(key, 128, &aes_key)<0){
@@ -216,6 +264,13 @@ int dl_encry(int encrypt, unsigned char *key, int keylen, unsigned char *data, i
 			exit(-1);
 		}
 		ret = do_proc(data, out, datalen, &aes_key, iv, (cbc128_f)aes_cbc);
+		*/
+		ret = do_cts_evp_encrypt(encrypt, data, out, datalen, key, iv);
+	} else if (nblocks == 1) {
+		if (datalen != BLOCK_SIZE) {
+			return 0;
+		}
+		ret = dl_cbc_encry (encrypt, key, iv, data, BLOCK_SIZE, out);
 	}
 	return ret;
 }
@@ -240,17 +295,15 @@ JNIEXPORT jbyteArray JNICALL Java_org_apache_kerby_kerberos_kerb_crypto_enc_prov
 //fprintf(fp, "%s %d -> %s \n", "data", datalen, bytetohexstring(data, datalen)); fflush(fp);
 //fprintf(fp, "%s %d -> %s \n", "key", keylen, bytetohexstring(key, keylen)); fflush(fp);
 //fprintf(fp, "%s %d -> %s \n", "iv ", ivlen, bytetohexstring(iv , ivlen)); fflush(fp);
-	if (st_data == NULL) {
+	if (0 && st_data == NULL) {
 		st_data = (unsigned char*)malloc(16*1024*1024);
 	}
 
 	bool encrypt = jencrypt == JNI_TRUE;
-int i = 1;
 	//unsigned char *buf = (unsigned char *)malloc(datalen +64);
-//while(i);
 	//int retlen = encrypt ? cts128_encrypt(nkey, 16, ndata, datalen, niv, buf) :
 	//			cts128_decrypt(nkey, 16, ndata, datalen, niv, buf);
-	int retlen = dl_encry(encrypt?1:0, key, 16, st_data, datalen, iv, st_data);
+	int retlen = dl_encry(encrypt?1:0, key, data, datalen, iv, data);
 	//int retlen = dl_aes_128_ctr(encrypt?1:0, key, 16, data, datalen, iv, data);
 
 //fprintf(fp, "%s %d -> %s \n", "ret", retlen, bytetohexstring(buf, retlen)); fflush(fp); 
@@ -369,7 +422,7 @@ void dl_symbols() {
         exit(-1);
     }
 
-    fc_aes_128_cbc = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_ecb");
+    fc_aes_128_cbc = (FUN_EVP_CIPHER)dlsym(so_handle, "EVP_aes_128_cbc");
     err = dlerror();
     if (NULL != err) {
         fprintf(stderr, "%s\n", err);
@@ -398,6 +451,20 @@ void dl_symbols() {
     }
 
     fc_de_update = (FUN_EVP_UPDATE)dlsym(so_handle, "EVP_DecryptUpdate");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_en_final = (FUN_EVP_FINAL)dlsym(so_handle, "EVP_EncryptFinal_ex");
+    err = dlerror();
+    if (NULL != err) {
+        fprintf(stderr, "%s\n", err);
+        exit(-1);
+    }
+
+    fc_de_final = (FUN_EVP_FINAL)dlsym(so_handle, "EVP_DecryptFinal_ex");
     err = dlerror();
     if (NULL != err) {
         fprintf(stderr, "%s\n", err);
