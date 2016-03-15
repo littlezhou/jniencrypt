@@ -58,22 +58,6 @@ int phrase_hex(unsigned char * in, unsigned char *out)
 }
 
 
-int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
-	int ret = 0;
-	AES_KEY aes_key;
-	int nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
-	if (nblocks == 1) {
-
-	} else if (nblocks > 1) {
-		if (AES_set_encrypt_key(key, 128, &aes_key)<0){
-			printf("key error");
-			exit(-1);
-		}
-		ret = CRYPTO_cts128_encrypt(data, out, datalen, &aes_key, iv, (cbc128_f)AES_cbc_encrypt);
-	}
-	return ret;
-}
-
 int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
 	int ret = 0;
 	AES_KEY aes_key;
@@ -88,6 +72,17 @@ int cts128_decrypt(unsigned char *key, int keylen, unsigned char *data, int data
 		ret = CRYPTO_cts128_decrypt(data, out, datalen, &aes_key, iv, (cbc128_f)AES_cbc_encrypt);
 	}
 	return ret;
+}
+
+int test_aes_cbc_128(int encrypt, unsigned char *key, unsigned char *data, size_t datalen, unsigned char *iv, unsigned char *out)
+{
+	AES_KEY aes_key;
+	if(encrypt)
+		AES_set_encrypt_key(key, 128, &aes_key);
+	else
+		AES_set_decrypt_key(key, 128, &aes_key);
+	AES_cbc_encrypt(data, out, datalen, &aes_key, iv, encrypt);
+	return datalen;
 }
 
 
@@ -127,6 +122,7 @@ int do_cbc_evp_encrypt(unsigned char *data, int datalen, unsigned char *key, uns
         return 0;
     }
     outlen += leftlen;
+    memcpy(iv, ctx.iv, 16);
     EVP_CIPHER_CTX_cleanup(&ctx);
     return outlen;
 }
@@ -145,13 +141,12 @@ int do_cbc_evp_encrypt__round(unsigned char *data, int datalen, unsigned char *k
     char *algo = "aes-128-cbc";
     const EVP_CIPHER *evp_cipher = NULL;
 
-init();
-
-    evp_cipher = EVP_get_cipherbyname(algo);
+//init();
+    //evp_cipher = EVP_get_cipherbyname(algo);
 
     EVP_CIPHER_CTX ctx;
     EVP_CIPHER_CTX_init(&ctx);
-    EVP_EncryptInit_ex(&ctx, evp_cipher, NULL, key, iv);   //EVP_aes_128_cbc()
+    EVP_EncryptInit_ex(&ctx, EVP_aes_128_cbc(), NULL, key, iv);   //EVP_aes_128_cbc()
     EVP_CIPHER_CTX_set_padding(&ctx, 0);
 
     for(i = 0; i<nround; i++)
@@ -175,6 +170,23 @@ init();
 }
 
 
+int cts128_encrypt(unsigned char *key, int keylen, unsigned char *data, int datalen, unsigned char *iv, unsigned char *out) {
+	int ret = 0;
+	AES_KEY aes_key;
+	int nblocks = (datalen + BLOCK_SIZE -1)/BLOCK_SIZE;
+	if (nblocks == 1) {
+
+	} else if (nblocks > 1) {
+		if (AES_set_encrypt_key(key, 128, &aes_key)<0){
+			printf("key error");
+			exit(-1);
+		}
+		ret = CRYPTO_cts128_encrypt(data, out, datalen, &aes_key, iv, (cbc128_f)AES_cbc_encrypt);
+	}
+	return ret;
+}
+
+
 int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
                              size_t datalen, unsigned char *key,
                              unsigned char iv[16])
@@ -184,6 +196,8 @@ int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
         size_t align;
         unsigned char c[16];
     } tmp;
+
+    AES_KEY aes_key;
 
     if(!(data && out && key && iv)) {
 		return 0;
@@ -196,6 +210,7 @@ int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
         residue = 16;
 
     datalen -= residue;
+
 
     //(*cbc) (data, out, datalen, key, iv, 1);
 	do_cbc_evp_encrypt(data, datalen, key, iv, out);
@@ -218,7 +233,7 @@ int do_cts_evp_encrypt(unsigned char *data, unsigned char *out,
 }
 
 
-
+/*
 int test_cbc128_encry(int encrypt, unsigned char *key, unsigned char *data, size_t datalen, unsigned char *iv, unsigned char *out) {
 	if(encrypt)
 	{
@@ -230,7 +245,7 @@ int test_cbc128_encry(int encrypt, unsigned char *key, unsigned char *data, size
 	}
 	return (int)datalen;
 }
-
+*/
 
 static unsigned char key16[16] = {
         0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
@@ -242,11 +257,11 @@ void test()
 	struct timeval stm, etm;
 	double tm_comp;
 	int i;
-	int datalen = 8*1024; //16*1024*1024;
+	int datalen = 16*1204*1024; //24;// 16*1024*1024;  // 8*1024; 
 	int ret;
 	double outlen = 0;
 	unsigned char *data, *out;
-	int round = 599999;
+	int round = 200;   //599999;
 	
 	int dbg = 0;
 
@@ -282,17 +297,18 @@ void test()
 
 	for(i=0; i<round; i++)
 	{
-		//ret = cts128_encrypt(key, 16, data, datalen, iv, out);
+		ret = cts128_encrypt(key, 16, data, datalen, iv, out);
 		//ret = do_cts_evp_encrypt(data, out, datalen, key, iv);
 		
 		//ret = test_cbc128_encry(1, key, data, datalen, iv, out);  // Error
 		//ret = test_cbc128(1, key, data, datalen, iv, out);
+		//ret = test_aes_cbc_128(1, key, data, datalen, iv, out);
 		//ret = do_cbc_evp_encrypt(data, datalen, key, iv, out);
-		//outlen += ret;
+		outlen += ret;
 
-		ret = do_cbc_evp_encrypt__round(data, datalen, key, iv, out, round);
-		outlen = round* 1.0 * datalen ;
-		break;
+		//ret = do_cbc_evp_encrypt__round(data, datalen, key, iv, out, round);
+		//outlen = round* 1.0 * datalen ;
+		//break;
 	}
 	gettimeofday(&etm, NULL);
 
